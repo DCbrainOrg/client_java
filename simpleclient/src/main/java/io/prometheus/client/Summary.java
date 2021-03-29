@@ -1,6 +1,8 @@
 package io.prometheus.client;
 
 import io.prometheus.client.CKMSQuantiles.Quantile;
+import io.prometheus.client.exemplars.ExemplarConfig;
+import io.prometheus.client.exemplars.SummaryExemplarSampler;
 
 import java.io.Closeable;
 import java.util.ArrayList;
@@ -83,9 +85,11 @@ public class Summary extends SimpleCollector<Summary.Child> implements Counter.D
   final List<Quantile> quantiles; // Can be empty, but can never be null.
   final long maxAgeSeconds;
   final int ageBuckets;
+  final SummaryExemplarSampler exemplarSampler;
 
   Summary(Builder b) {
     super(b);
+    this.exemplarSampler = b.exemplarSampler;
     quantiles = Collections.unmodifiableList(new ArrayList<Quantile>(b.quantiles));
     this.maxAgeSeconds = b.maxAgeSeconds;
     this.ageBuckets = b.ageBuckets;
@@ -97,6 +101,7 @@ public class Summary extends SimpleCollector<Summary.Child> implements Counter.D
     private final List<Quantile> quantiles = new ArrayList<Quantile>();
     private long maxAgeSeconds = TimeUnit.MINUTES.toSeconds(10);
     private int ageBuckets = 5;
+    private SummaryExemplarSampler exemplarSampler = ExemplarConfig.getDefaultSummaryExemplarSampler();
 
     public Builder quantile(double quantile, double error) {
       if (quantile < 0.0 || quantile > 1.0) {
@@ -123,6 +128,18 @@ public class Summary extends SimpleCollector<Summary.Child> implements Counter.D
       }
       this.ageBuckets = ageBuckets;
       return this;
+    }
+
+    public Builder withExemplarSampler(SummaryExemplarSampler exemplarSampler) {
+      if (exemplarSampler == null) {
+        throw new NullPointerException();
+      }
+      this.exemplarSampler = exemplarSampler;
+      return this;
+    }
+
+    public Builder withoutExemplars() {
+      return withExemplarSampler(ExemplarConfig.getNoopExemplarSampler());
     }
 
     @Override
@@ -156,7 +173,7 @@ public class Summary extends SimpleCollector<Summary.Child> implements Counter.D
 
   @Override
   protected Child newChild() {
-    return new Child(quantiles, maxAgeSeconds, ageBuckets);
+    return new Child(quantiles, maxAgeSeconds, ageBuckets, exemplarSampler);
   }
 
 
@@ -266,8 +283,10 @@ public class Summary extends SimpleCollector<Summary.Child> implements Counter.D
     private final List<Quantile> quantiles;
     private final TimeWindowQuantiles quantileValues;
     private final long created = System.currentTimeMillis();
+    private final SummaryExemplarSampler exemplarSampler;
 
-    private Child(List<Quantile> quantiles, long maxAgeSeconds, int ageBuckets) {
+    private Child(List<Quantile> quantiles, long maxAgeSeconds, int ageBuckets, SummaryExemplarSampler exemplarSampler) {
+      this.exemplarSampler = exemplarSampler;
       this.quantiles = quantiles;
       if (quantiles.size() > 0) {
         quantileValues = new TimeWindowQuantiles(quantiles.toArray(new Quantile[]{}), maxAgeSeconds, ageBuckets);

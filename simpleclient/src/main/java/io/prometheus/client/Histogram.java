@@ -1,5 +1,9 @@
 package io.prometheus.client;
 
+import io.prometheus.client.exemplars.Exemplar;
+import io.prometheus.client.exemplars.ExemplarConfig;
+import io.prometheus.client.exemplars.HistogramExemplarSampler;
+
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -62,14 +66,18 @@ import java.util.concurrent.Callable;
  */
 public class Histogram extends SimpleCollector<Histogram.Child> implements Collector.Describable {
   private final double[] buckets;
+  private final HistogramExemplarSampler exemplarSampler;
 
   Histogram(Builder b) {
     super(b);
+    this.exemplarSampler = b.exemplarSampler;
     buckets = b.buckets;
     initializeNoLabelsChild();
   }
 
   public static class Builder extends SimpleCollector.Builder<Builder, Histogram> {
+
+    private HistogramExemplarSampler exemplarSampler = ExemplarConfig.getDefaultHistogramExemplarSampler();
     private double[] buckets = new double[]{.005, .01, .025, .05, .075, .1, .25, .5, .75, 1, 2.5, 5, 7.5, 10};
 
     @Override
@@ -129,6 +137,17 @@ public class Histogram extends SimpleCollector<Histogram.Child> implements Colle
       return this;
     }
 
+    public Builder withExemplarSampler(HistogramExemplarSampler exemplarSampler) {
+      if (exemplarSampler == null) {
+        throw new NullPointerException();
+      }
+      this.exemplarSampler = exemplarSampler;
+      return this;
+    }
+
+    public Builder withoutExemplars() {
+      return withExemplarSampler(ExemplarConfig.getNoopExemplarSampler());
+    }
   }
 
   /**
@@ -150,7 +169,7 @@ public class Histogram extends SimpleCollector<Histogram.Child> implements Colle
 
   @Override
   protected Child newChild() {
-    return new Child(buckets);
+    return new Child(buckets, exemplarSampler);
   }
 
   /**
@@ -240,13 +259,18 @@ public class Histogram extends SimpleCollector<Histogram.Child> implements Colle
       }
     }
 
-    private Child(double[] buckets) {
+    private Child(double[] buckets, HistogramExemplarSampler exemplarSampler) {
       upperBounds = buckets;
+      this.exemplarSampler = exemplarSampler;
+      this.exemplars = new Exemplar[buckets.length];
       cumulativeCounts = new DoubleAdder[buckets.length];
       for (int i = 0; i < buckets.length; ++i) {
         cumulativeCounts[i] = new DoubleAdder();
       }
     }
+
+    private final Exemplar[] exemplars;
+    private final HistogramExemplarSampler exemplarSampler;
     private final double[] upperBounds;
     private final DoubleAdder[] cumulativeCounts;
     private final DoubleAdder sum = new DoubleAdder();

@@ -1,5 +1,8 @@
 package io.prometheus.client;
 
+import io.prometheus.client.exemplars.CounterExemplarSampler;
+import io.prometheus.client.exemplars.ExemplarConfig;
+
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
@@ -73,20 +76,41 @@ import java.util.Map;
  */
 public class Counter extends SimpleCollector<Counter.Child> implements Collector.Describable {
 
+  private final CounterExemplarSampler exemplarSampler;
+
   Counter(Builder b) {
     super(b);
+    this.exemplarSampler = b.exemplarSampler;
+    initializeNoLabelsChild();
   }
 
   public static class Builder extends SimpleCollector.Builder<Builder, Counter> {
+
+    private CounterExemplarSampler exemplarSampler = ExemplarConfig.getDefaultCounterExemplarSampler();
+
     @Override
     public Counter create() {
       // Gracefully handle pre-OpenMetrics counters.
       if (name.endsWith("_total")) {
         name = name.substring(0, name.length() - 6);
       }
+      dontInitializeNoLabelsChild = true;
       return new Counter(this);
     }
+
+    public Builder withExemplarSampler(CounterExemplarSampler exemplarSampler) {
+      if (exemplarSampler == null) {
+        throw new NullPointerException();
+      }
+      this.exemplarSampler = exemplarSampler;
+      return this;
+    }
+
+    public Builder withoutExemplars() {
+      return withExemplarSampler(ExemplarConfig.getNoopExemplarSampler());
+    }
   }
+
 
   /**
    *  Return a Builder to allow configuration of a new Counter. Ensures required fields are provided.
@@ -107,7 +131,7 @@ public class Counter extends SimpleCollector<Counter.Child> implements Collector
 
   @Override
   protected Child newChild() {
-    return new Child();
+    return new Child(exemplarSampler);
   }
 
   /**
@@ -119,6 +143,12 @@ public class Counter extends SimpleCollector<Counter.Child> implements Collector
   public static class Child {
     private final DoubleAdder value = new DoubleAdder();
     private final long created = System.currentTimeMillis();
+    private final CounterExemplarSampler exemplarSampler;
+
+    public Child(CounterExemplarSampler exemplarSampler) {
+      this.exemplarSampler = exemplarSampler;
+    }
+
     /**
      * Increment the counter by 1.
      */
@@ -133,6 +163,8 @@ public class Counter extends SimpleCollector<Counter.Child> implements Collector
       if (amt < 0) {
         throw new IllegalArgumentException("Amount to increment must be non-negative.");
       }
+      // TODO
+      System.out.println("*** Current trace id while incrementing counter: " + exemplarSampler.sample(amt, null));
       value.add(amt);
     }
     /**

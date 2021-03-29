@@ -1,5 +1,8 @@
 package io.prometheus.client;
 
+import io.prometheus.client.exemplars.ExemplarConfig;
+import io.prometheus.client.exemplars.GaugeExemplarSampler;
+
 import java.io.Closeable;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -65,13 +68,33 @@ import java.util.concurrent.Callable;
  */
 public class Gauge extends SimpleCollector<Gauge.Child> implements Collector.Describable {
 
+  private final GaugeExemplarSampler exemplarSampler;
+
   Gauge(Builder b) {
     super(b);
+    this.exemplarSampler = b.exemplarSampler;
+    initializeNoLabelsChild();
   }
 
   public static class Builder extends SimpleCollector.Builder<Builder, Gauge> {
+
+    private GaugeExemplarSampler exemplarSampler = ExemplarConfig.getDefaultGaugeExemplars();
+
+    public Builder withExemplars(GaugeExemplarSampler exemplarSampler) {
+      if (exemplarSampler == null) {
+        throw new NullPointerException();
+      }
+      this.exemplarSampler = exemplarSampler;
+      return this;
+    }
+
+    public Builder withoutExemplars() {
+      return withExemplars(ExemplarConfig.getNoopExemplarSampler());
+    }
+
     @Override
     public Gauge create() {
+      dontInitializeNoLabelsChild = true;
       return new Gauge(this);
     }
   }
@@ -95,7 +118,7 @@ public class Gauge extends SimpleCollector<Gauge.Child> implements Collector.Des
 
   @Override
   protected Child newChild() {
-    return new Child();
+    return new Child(exemplarSampler);
   }
 
    /**
@@ -136,8 +159,12 @@ public class Gauge extends SimpleCollector<Gauge.Child> implements Collector.Des
   public static class Child {
 
     private final DoubleAdder value = new DoubleAdder();
-
+    private final GaugeExemplarSampler exemplarSampler;
     static TimeProvider timeProvider = new TimeProvider();
+
+    public Child(GaugeExemplarSampler exemplarSampler) {
+      this.exemplarSampler = exemplarSampler;
+    }
 
     /**
      * Increment the gauge by 1.
